@@ -1,7 +1,66 @@
-// TODO: Define gRPC service
-// service NodeRegistry {
-//   rpc Register(RegisterRequest) returns (NodeResponse);
-//   rpc List(Empty) returns (NodeList);
-//   rpc Get(GetRequest) returns (NodeResponse);
-//   rpc Delete(DeleteRequest) returns (Empty);
-// }
+syntax = "proto3";
+
+package noderegistry;
+
+// Service discovery registry, exposed over gRPC.
+//
+// The REST gateway is the only client of this service; nothing else reaches
+// the database. Every RPC below mirrors one endpoint of the REST API, so the
+// gateway stays a thin translation layer with no business logic of its own.
+service NodeRegistry {
+  rpc Register(RegisterRequest) returns (NodeResponse);
+  rpc List(Empty) returns (NodeList);
+  rpc Get(GetRequest) returns (NodeResponse);
+  rpc Update(UpdateRequest) returns (NodeResponse);
+  rpc Delete(DeleteRequest) returns (Empty);
+  rpc Health(Empty) returns (HealthResponse);
+}
+
+// Every RPC takes and returns a message, even when there is nothing to carry.
+message Empty {}
+
+message RegisterRequest {
+  string name = 1;
+  string host = 2;
+  int32 port = 3;
+}
+
+message GetRequest {
+  string name = 1;
+}
+
+// Partial update. `optional` gives these fields explicit presence, so the
+// server can tell "field omitted" from "field sent as empty string" or 0.
+// Without it a PUT carrying only `port` would blank out `host`.
+message UpdateRequest {
+  string name = 1;
+  optional string host = 2;
+  optional int32 port = 3;
+}
+
+message DeleteRequest {
+  string name = 1;
+}
+
+// Mirrors a row of the `nodes` table. Timestamps travel as ISO-8601 strings
+// so the gateway can hand them straight to JSON.
+message NodeResponse {
+  int32 id = 1;
+  string name = 2;
+  string host = 3;
+  int32 port = 4;
+  string status = 5;
+  string created_at = 6;
+  string updated_at = 7;
+}
+
+message NodeList {
+  repeated NodeResponse nodes = 1;
+}
+
+// Backs GET /health on the gateway. `nodes_count` counts active nodes only.
+message HealthResponse {
+  string status = 1;
+  string db = 2;
+  int32 nodes_count = 3;
+}

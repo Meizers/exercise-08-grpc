@@ -1,1 +1,53 @@
-# TODO: 3 services: db, grpc-server (50051), gateway (8080)
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    # Credentials live in .env, never in this file (copy .env.example first).
+    env_file:
+      - .env
+    volumes:
+      # Named volume: the registry survives `docker compose restart`.
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  grpc_server:
+    build:
+      context: .
+      dockerfile: grpc_server/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      GRPC_PORT: ${GRPC_PORT:-50051}
+    # No `ports:` on purpose. The registry is reachable only from inside the
+    # compose network, the same way the database is: the gateway is its only
+    # client, and nothing on the host should bypass it.
+    depends_on:
+      db:
+        condition: service_healthy
+
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    restart: unless-stopped
+    # Deliberately no env_file: the gateway never touches the database, so it
+    # has no business holding its credentials.
+    environment:
+      GRPC_SERVER_ADDRESS: ${GRPC_SERVER_ADDRESS:-grpc_server:50051}
+    ports:
+      - "8080:8080"
+    # Waits for the registry to answer its Health RPC, not just for the
+    # container to exist.
+    depends_on:
+      grpc_server:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
